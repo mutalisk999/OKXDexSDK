@@ -60,6 +60,22 @@ async def check_allowance(_node_url: str, _token_addr: str, _owner_addr: str, _s
     return res
 
 
+async def estimate_gas(_node_url: str, _token_addr: str, _caller_addr: str, _value: int, _data: bytes) -> Optional[int]:
+    w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(_node_url))
+    connected = await w3.is_connected()
+    if not connected:
+        return None
+
+    gas_limit = await w3.eth.estimate_gas({
+        'from': AsyncWeb3.to_checksum_address(_caller_addr),
+        'to': AsyncWeb3.to_checksum_address(_token_addr),
+        'value': w3.to_wei(_value, 'wei'),
+        'data': _data,
+    })
+
+    return gas_limit
+
+
 if __name__ == "__main__":
     url = "https://public-bsc.nownodes.io"
     # token_addr = "0x55d398326f99059ff775485246999027b3197955"
@@ -71,9 +87,24 @@ if __name__ == "__main__":
     spender_addr = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
 
 
-    async def func(_url, _token_addr, _owner_addr, _spender_addr):
+    async def func1(_url, _token_addr, _owner_addr, _spender_addr):
         r = await check_allowance(_url, _token_addr, _owner_addr, _spender_addr)
-        print(r)
+        return r
 
 
-    asyncio.run(func(url, token_addr, owner_addr, spender_addr))
+    async def func2(_url, _token_addr, _owner_addr):
+        data = "095ea7b30000000000000000000000005c952063c7fc8610ffdb798152d69f0b9550762b00000000000000000000000000000000000000000000898a57ccc69947eb4300"
+        r = await estimate_gas(_url, _token_addr, _owner_addr, 0, bytes.fromhex(data))
+        return r
+
+
+    async def func():
+        fut1 = func1(url, token_addr, owner_addr, spender_addr)
+        fut2 = func2(url, token_addr, owner_addr)
+
+        r1, r2 = await asyncio.gather(fut1, fut2)
+        print(r1)
+        print(r2)
+
+
+    asyncio.run(func())
