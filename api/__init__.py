@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # encoding: utf-8
-
+import json
 import os
 from enum import StrEnum
 import aiohttp
@@ -187,6 +187,44 @@ async def get_aggregator_history(api_key: str, secret_key: str, pass_phrase: str
             return await response.json()
 
 
+async def get_gas_limit(api_key: str, secret_key: str, pass_phrase: str,
+                        chain_idx: int, from_addr: str, to_addr: str,
+                        value: int, input_data: str, timeout: int) -> dict:
+    request_path = "/api/v5/dex/pre-transaction/gas-limit"
+    ts_iso_8601 = get_time_now_iso_8601()
+
+    body = {
+        "chainIndex": chain_idx,
+        "fromAddress": from_addr,
+        "toAddress": to_addr,
+        "txAmount": value,
+        "extJson": {
+            "inputData": input_data,
+        }
+    }
+
+    ok_access_sign = calc_ok_access_sign(secret_key, ts_iso_8601, "POST", request_path, json.dumps(body))
+    headers = {
+        "OK-ACCESS-KEY": api_key,
+        "OK-ACCESS-SIGN": ok_access_sign,
+        "OK-ACCESS-PASSPHRASE": pass_phrase,
+        "OK-ACCESS-TIMESTAMP": ts_iso_8601,
+    }
+    url = "".join([DOMAIN_NAME, request_path])
+
+    connector = None
+    proxy_url = os.getenv("CLIENT_PROXY")
+
+    if proxy_url is not None and proxy_url != "":
+        connector = ProxyConnector.from_url(proxy_url)
+
+    client_timeout = aiohttp.ClientTimeout(total=timeout)
+
+    async with aiohttp.ClientSession(connector=connector) as session:
+        async with session.post(url, headers=headers, json=body, timeout=client_timeout) as response:
+            return await response.json()
+
+
 if __name__ == "__main__":
     async def func(api_key: str, secret_key: str, pass_phrase: str):
         timeout = 10
@@ -225,10 +263,21 @@ if __name__ == "__main__":
         print(r2)
 
 
+    async def func3(api_key: str, secret_key: str, pass_phrase: str):
+        timeout = 10
+        r = await get_gas_limit(api_key, secret_key, pass_phrase, 1,
+                                "0x429752d5f5b595340381b158d80e846f9b20b6da",
+                                "0x55d398326f99059ff775485246999027b3197955", 0,
+                                "095ea7b30000000000000000000000005c952063c7fc8610ffdb798152d69f0b9550762b00000000000000000000000000000000000000000000898a57ccc69947eb4300",
+                                timeout)
+        print(r)
+
+
     load_dotenv("../.env")
     apikey = str(os.getenv("API_KEY"))
     secretkey = str(os.getenv("API_SECRET"))
     passphrase = str(os.getenv("API_PASSPHRASE"))
 
     # asyncio.run(func(apikey, secretkey, passphrase))
-    asyncio.run(func2(apikey, secretkey, passphrase))
+    # asyncio.run(func2(apikey, secretkey, passphrase))
+    asyncio.run(func3(apikey, secretkey, passphrase))
