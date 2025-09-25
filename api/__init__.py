@@ -5,6 +5,8 @@ import os
 from enum import StrEnum
 import aiohttp
 import asyncio
+
+from _decimal import Decimal
 from aiohttp_socks import ProxyConnector
 from dotenv import load_dotenv
 
@@ -131,12 +133,44 @@ async def get_approve_transaction(api_key: str, secret_key: str, pass_phrase: st
 # quote
 async def get_aggregator_quote(api_key: str, secret_key: str, pass_phrase: str,
                                chain_idx: int, swap_mode: SwapMode, amount: int,
-                               from_token_contract_addr: str, to_token_contract_addr: str,
+                               from_token_contract_addr: str, to_token_contract_addr: str, slippage: Decimal,
                                timeout: int) -> dict:
     # SwapMode: exactIn => amount: sell exact amount
     # SwapMode: exactOut => amount: buy exact amount
-    request_path = "/api/v5/dex/aggregator/quote?chainIndex={}&swapMode={}&amount={}&fromTokenAddress={}&toTokenAddress={}".format(
-        chain_idx, swap_mode.value, amount, from_token_contract_addr, to_token_contract_addr)
+    request_path = "/api/v5/dex/aggregator/quote?chainIndex={}&swapMode={}&amount={}&fromTokenAddress={}&toTokenAddress={}&slippage={}".format(
+        chain_idx, swap_mode.value, amount, from_token_contract_addr, to_token_contract_addr, slippage)
+    ts_iso_8601 = get_time_now_iso_8601()
+    ok_access_sign = calc_ok_access_sign(secret_key, ts_iso_8601, "GET", request_path)
+    headers = {
+        "OK-ACCESS-KEY": api_key,
+        "OK-ACCESS-SIGN": ok_access_sign,
+        "OK-ACCESS-PASSPHRASE": pass_phrase,
+        "OK-ACCESS-TIMESTAMP": ts_iso_8601,
+    }
+    url = "".join([DOMAIN_NAME, request_path])
+
+    connector = None
+    proxy_url = os.getenv("CLIENT_PROXY")
+
+    if proxy_url is not None and proxy_url != "":
+        connector = ProxyConnector.from_url(proxy_url)
+
+    client_timeout = aiohttp.ClientTimeout(total=timeout)
+
+    async with aiohttp.ClientSession(connector=connector) as session:
+        async with session.get(url, headers=headers, timeout=client_timeout) as response:
+            return await response.json()
+
+
+async def get_aggregator_swap(api_key: str, secret_key: str, pass_phrase: str,
+                              chain_idx: int, swap_mode: SwapMode, amount: int,
+                              from_token_contract_addr: str, to_token_contract_addr: str,
+                              user_addr: str, slippage: Decimal,
+                              timeout: int) -> dict:
+    # SwapMode: exactIn => amount: sell exact amount
+    # SwapMode: exactOut => amount: buy exact amount
+    request_path = "/api/v5/dex/aggregator/swap?chainIndex={}&swapMode={}&amount={}&fromTokenAddress={}&toTokenAddress={}&userWalletAddress={}&slippage={}".format(
+        chain_idx, swap_mode.value, amount, from_token_contract_addr, to_token_contract_addr, user_addr, slippage)
     ts_iso_8601 = get_time_now_iso_8601()
     ok_access_sign = calc_ok_access_sign(secret_key, ts_iso_8601, "GET", request_path)
     headers = {
@@ -245,7 +279,17 @@ if __name__ == "__main__":
         r = await get_aggregator_quote(api_key, secret_key, pass_phrase, 1, SwapMode.exactIn,
                                        10000000000000000000,
                                        "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-                                       "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", timeout)
+                                       "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", Decimal("0.005"),
+                                       timeout)
+        print(r)
+
+        r = await get_aggregator_swap(api_key, secret_key, pass_phrase, 1, SwapMode.exactIn,
+                                      10000000000000000000,
+                                      "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                                      "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                                      "0x429752d5f5b595340381b158d80e846f9b20b6da",
+                                      Decimal("0.005"),
+                                      timeout)
         print(r)
 
         r = await get_aggregator_history(api_key, secret_key, pass_phrase, 784,
@@ -278,6 +322,6 @@ if __name__ == "__main__":
     secretkey = str(os.getenv("API_SECRET"))
     passphrase = str(os.getenv("API_PASSPHRASE"))
 
-    # asyncio.run(func(apikey, secretkey, passphrase))
+    asyncio.run(func(apikey, secretkey, passphrase))
     # asyncio.run(func2(apikey, secretkey, passphrase))
-    asyncio.run(func3(apikey, secretkey, passphrase))
+    # asyncio.run(func3(apikey, secretkey, passphrase))
